@@ -6,7 +6,8 @@ import { SessionSidebar } from '../components/SessionSidebar';
 import { ChatWindow } from '../components/ChatWindow';
 import { UrgentHelpModal } from '../components/UrgentHelpModal';
 import { SessionSummaryModal } from '../components/SessionSummaryModal';
-import { Menu, ShieldAlert, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Menu, ShieldAlert, Sparkles, CheckCircle2, Shield } from 'lucide-react';
+import { PrivacyNoticeModal } from '../components/PrivacyNoticeModal';
 
 export const ChatPage: React.FC = () => {
   const { user, profile, logout } = useAuth();
@@ -19,6 +20,7 @@ export const ChatPage: React.FC = () => {
     errorMessage,
     searchQuery,
     setSearchQuery,
+    loadError,
     createNewSession,
     selectSession,
     renameSession,
@@ -35,6 +37,7 @@ export const ChatPage: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [urgentHelpOpen, setUrgentHelpOpen] = useState(false);
   const [confirmEndOpen, setConfirmEndOpen] = useState(false);
+  const [privacyNoticeOpen, setPrivacyNoticeOpen] = useState(false);
 
   const handleConfirmEndSession = async () => {
     setConfirmEndOpen(false);
@@ -62,6 +65,7 @@ export const ChatPage: React.FC = () => {
           onLogout={logout}
           isOpen={mobileMenuOpen}
           onCloseMobile={() => setMobileMenuOpen(false)}
+          loadError={loadError}
         />
 
         <div className="flex-1 flex flex-col h-full overflow-hidden">
@@ -110,8 +114,17 @@ export const ChatPage: React.FC = () => {
               )}
 
               <button
+                onClick={() => setPrivacyNoticeOpen(true)}
+                className="hidden lg:flex items-center gap-1.5 text-xs text-midnight/70 hover:text-midnight bg-paper px-2.5 py-1.5 rounded-pill border border-midnight/10 transition-colors"
+                aria-label="Privacy notice"
+              >
+                <Shield className="w-3.5 h-3.5" />
+                <span>Privacy</span>
+              </button>
+
+              <button
                 onClick={() => setUrgentHelpOpen(true)}
-                className="bg-tangerine text-paper hover:bg-tangerine/90 py-1.5 px-3.5 rounded-pill text-xs font-bold flex items-center gap-1.5 transition-colors"
+                className="bg-tangerine text-paper hover:bg-tangerine/90 py-1.5 px-3.5 rounded-pill text-xs font-bold flex items-center gap-1.5 transition-colors focus:outline-none focus:ring-2 focus:ring-tangerine"
                 aria-label="I need urgent help now"
               >
                 <ShieldAlert className="w-4 h-4 text-paper" />
@@ -178,6 +191,12 @@ export const ChatPage: React.FC = () => {
         isLoading={isSummaryLoading}
         errorMessage={summaryError}
         onRetry={endSessionAndGenerateSummary}
+      />
+
+      {/* Privacy Notice Modal */}
+      <PrivacyNoticeModal
+        isOpen={privacyNoticeOpen}
+        onClose={() => setPrivacyNoticeOpen(false)}
       />
     </div>
   );

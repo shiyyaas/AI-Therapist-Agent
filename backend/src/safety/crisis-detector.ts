@@ -5,19 +5,59 @@ export interface CrisisDetectionResult {
   matchedCategories: string[];
 }
 
-export const FIXED_CRISIS_RESPONSE = `Your safety matters, and you do not have to carry this alone.
+// 1. Immediate Danger / Imminent Action Response
+export const FIXED_IMMEDIATE_DANGER_RESPONSE = `Your safety is the absolute priority right now.
 
-If you are in immediate danger or feel you cannot stay safe right now, please call your local emergency services (such as 911 in the U.S.) or go to the nearest emergency room immediately.
+If you are in immediate danger, feel you cannot keep yourself safe, or have taken action to harm yourself:
+• Call your local emergency services (such as 911 in the U.S.) or go to the nearest emergency room immediately.
+• If you cannot speak out loud, text 911 (available in many U.S. areas) or text 988.
+• Free, confidential 24/7 crisis support: Call or text 988 (U.S. & Canada) or visit https://988lifeline.org
+• International emergency support: https://findahelpline.com
 
-Emergency support is free, confidential, and available 24/7:
+Please move to a safer location, step away from anything dangerous, and contact a trusted person to be with you right now.
+
+Important: This application is an AI wellness companion, not a human, emergency dispatch, licensed therapist, or medical service.`;
+
+// 2. Urgent Distress / Suicidal Ideation without Imminent Danger Response
+export const FIXED_SUICIDAL_DISTRESS_RESPONSE = `Your safety matters, and you do not have to carry this alone.
+
+If you are struggling with thoughts of ending your life or intense emotional distress, compassionate human support is available 24/7:
 • In the U.S. and Canada: Call or text 988, or chat online at https://988lifeline.org
 • The Trevor Project (LGBTQ youth): Call 1-866-488-7386 or text START to 678-678
 • Veterans Crisis Line: Call 988 and press 1, or text 838255
 • International resources: Find free, confidential support worldwide at https://findahelpline.com
 
-Please reach out to a trusted person—a friend, family member, or healthcare professional—and try not to be alone right now.
+Please reach out to a trusted person—a friend, family member, mentor, or healthcare professional—and try not to be alone right now.
 
 Important: This app is an AI companion, not a human, licensed therapist, doctor, or emergency crisis service.`;
+
+// 3. Risk of Harm to Another Person / Violence Response
+export const FIXED_VIOLENCE_HARM_OTHERS_RESPONSE = `Your well-being and the safety of everyone involved are critically important.
+
+If there is immediate danger of physical violence or someone may be harmed right now:
+• Please create safe physical distance immediately.
+• Contact local emergency services (such as 911 in the U.S.) if anyone's safety is in immediate jeopardy.
+• For confidential de-escalation, guidance, and crisis intervention: Call or text 988 (U.S. & Canada) or contact the Crisis Text Line by texting HOME to 741741.
+• Outside the U.S.: Find emergency support worldwide at https://findahelpline.com
+
+Please pause, take space from the situation, and reach out to a professional counselor or trusted crisis counselor right now.
+
+Important: This app is an AI companion, not a human, mediator, medical provider, or emergency service.`;
+
+// Default / fallback crisis response
+export const FIXED_CRISIS_RESPONSE = FIXED_SUICIDAL_DISTRESS_RESPONSE;
+
+export function getFixedCrisisResponse(category?: string | null): string {
+  if (!category) return FIXED_CRISIS_RESPONSE;
+  const cat = category.toLowerCase();
+  if (cat === 'immediate_danger' || cat === 'overdose' || cat === 'abuse') {
+    return FIXED_IMMEDIATE_DANGER_RESPONSE;
+  }
+  if (cat === 'violence' || cat === 'harm_others') {
+    return FIXED_VIOLENCE_HARM_OTHERS_RESPONSE;
+  }
+  return FIXED_SUICIDAL_DISTRESS_RESPONSE;
+}
 
 interface PatternDef {
   category: string;
@@ -25,27 +65,17 @@ interface PatternDef {
   pattern: RegExp;
 }
 
-// Configurable patterns covering:
-// - Suicide and suicidal ideation
-// - Self-harm and self-injury
-// - Overdose or poisoning intent
-// - Immediate danger or fear for safety
-// - Violence or intent to harm another person
-// - Abuse, coercion, or immediate threats
-//
-// Designed to avoid false positives for benign expressions such as:
-// "that dead workout killed me", "my head hurts", "I'm stressed out"
 const CRISIS_PATTERNS: PatternDef[] = [
   // 1. Suicide & Suicidal Ideation
   {
     category: 'suicide',
     level: 'crisis',
-    pattern: /\b(want to|going to|plan to|gonna|ready to|thinking of|thinking about|contemplating)\s+(kill myself|end my life|die by suicide|hang myself|shoot myself)\b/i,
+    pattern: /\b(want to|going to|plan to|gonna|ready to|thinking of|thinking about|contemplating|have a plan to)\s+(kill myself|end my life|die by suicide|hang myself|shoot myself)\b/i,
   },
   {
     category: 'suicide',
     level: 'crisis',
-    pattern: /\b(better off dead|don'?t want to live anymore|wish i (was|were) dead|i want to disappear forever|no reason to live|ready to end it all)\b/i,
+    pattern: /\b(better off dead|don'?t want to live anymore|wish i (was|were) dead|i want to disappear forever|no reason to live|ready to end it all|end my life tonight|have a plan to end my life)\b/i,
   },
   {
     category: 'suicide',
@@ -88,12 +118,12 @@ const CRISIS_PATTERNS: PatternDef[] = [
   {
     category: 'violence',
     level: 'crisis',
-    pattern: /\b(want to|going to|plan to|gonna)\s+(kill|murder|stab|shoot|strangle|hunt down)\s+(my\s+)?(boss|partner|wife|husband|coworker|friend|parents|them|him|her|someone|people)\b/i,
+    pattern: /\b(want to|going to|plan to|gonna)\s+(kill|murder|stab|shoot|strangle|hunt down|hurt)\s+(my\s+)?(boss|partner|wife|husband|coworker|friend|parents|them|him|her|someone|people)\b/i,
   },
   {
     category: 'violence',
     level: 'crisis',
-    pattern: /\b(bringing a (gun|weapon|knife|bomb) to\s+(school|work|office|mall))\b/i,
+    pattern: /\b(going to hurt someone|gonna hurt someone|bringing a (gun|weapon|knife|bomb) to\s+(school|work|office|mall))\b/i,
   },
 
   // 6. Abuse, Coercion, or Immediate Threats
