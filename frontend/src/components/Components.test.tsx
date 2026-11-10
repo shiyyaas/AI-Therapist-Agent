@@ -63,10 +63,10 @@ describe('UrgentHelpModal', () => {
   it('renders emergency resources when open', () => {
     render(<UrgentHelpModal isOpen={true} onClose={vi.fn()} />);
 
-    expect(screen.getByText(/Call 988/i)).toBeInTheDocument();
-    expect(screen.getByText(/Text 988/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Call 988/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Text 988/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/Chat Online at 988 Lifeline/i)).toBeInTheDocument();
-    expect(screen.getByText(/Local Emergency Services/i)).toBeInTheDocument();
+    expect(screen.getByText(/Immediate Physical Danger or Medical Emergency/i)).toBeInTheDocument();
     expect(screen.getByText(/Reach out to a trusted person/i)).toBeInTheDocument();
   });
 

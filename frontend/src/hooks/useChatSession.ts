@@ -27,17 +27,21 @@ export function formatSessionTitle(text: string, maxLength: number = 50): string
   return trimmed.slice(0, maxLength).trim();
 }
 
+const ACTIVE_SESSION_STORAGE_KEY = 'ai_wellness_active_session_id';
+
 export function useChatSession(userId: string | undefined) {
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(() => {
+    return localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY) || null;
+  });
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loadingSessions, setLoadingSessions] = useState<boolean>(true);
   const [loadingMessages, setLoadingMessages] = useState<boolean>(false);
   const [isSending, setIsSending] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  // End-of-session summary state
   const [currentSummary, setCurrentSummary] = useState<SessionSummary | null>(null);
   const [isSummaryLoading, setIsSummaryLoading] = useState<boolean>(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
@@ -46,7 +50,14 @@ export function useChatSession(userId: string | undefined) {
   const activeSessionIdRef = useRef<string | null>(null);
   activeSessionIdRef.current = activeSessionId;
 
-  // Listen for user sessions
+  useEffect(() => {
+    if (activeSessionId) {
+      localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, activeSessionId);
+    } else {
+      localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+    }
+  }, [activeSessionId]);
+
   useEffect(() => {
     if (!userId) {
       setSessions([]);
@@ -56,6 +67,7 @@ export function useChatSession(userId: string | undefined) {
     }
 
     setLoadingSessions(true);
+    setLoadError(null);
     const sessionsQuery = query(
       collection(db, 'sessions'),
       where('uid', '==', userId),
@@ -72,19 +84,24 @@ export function useChatSession(userId: string | undefined) {
         setSessions(list);
         setLoadingSessions(false);
 
-        if (!activeSessionIdRef.current && list.length > 0) {
+        const currentActive = activeSessionIdRef.current;
+        const exists = list.some((s) => s.id === currentActive);
+        if (!exists && list.length > 0) {
           setActiveSessionId(list[0].id);
+        } else if (list.length === 0) {
+          setActiveSessionId(null);
         }
       },
-      (_err) => {
+      (err) => {
         setLoadingSessions(false);
+        setLoadError('Unable to sync conversations. Please check your network connection.');
+        console.error('[FIRESTORE_SESSION_LISTEN_ERROR]', err?.message);
       }
     );
 
     return () => unsubscribe();
   }, [userId]);
 
-  // Listen for messages in active session
   useEffect(() => {
     if (!activeSessionId) {
       setMessages([]);
@@ -108,12 +125,13 @@ export function useChatSession(userId: string | undefined) {
         setMessages(msgs);
         setLoadingMessages(false);
       },
-      (_err) => {
+      (err) => {
         setLoadingMessages(false);
+        setErrorMessage('Unable to load message history. Please check connection.');
+        console.error('[FIRESTORE_MSG_LISTEN_ERROR]', err?.message);
       }
     );
 
-    // Try loading existing summary if session was ended
     getSessionSummaryApi(activeSessionId)
       .then((existing) => setCurrentSummary(existing))
       .catch(() => setCurrentSummary(null));
@@ -149,21 +167,23 @@ export function useChatSession(userId: string | undefined) {
 
   const renameSession = useCallback(async (sessionId: string, newTitle: string) => {
     const trimmed = formatSessionTitle(newTitle);
-    // Optimistic local update
+    const previousSessions = [...sessions];
     setSessions((prev) =>
       prev.map((s) => (s.id === sessionId ? { ...s, title: trimmed } : s))
     );
     try {
       await renameSessionApi(sessionId, trimmed);
     } catch (err: any) {
+      setSessions(previousSessions);
       setErrorMessage(err?.message || 'Failed to rename session.');
       throw err;
     }
-  }, []);
+  }, [sessions]);
 
   const deleteSession = useCallback(async (sessionId: string) => {
     const previousSessions = [...sessions];
-    // Optimistic UI update
+    const previousActive = activeSessionId;
+
     setSessions((prev) => prev.filter((s) => s.id !== sessionId));
 
     if (activeSessionId === sessionId) {
@@ -174,9 +194,9 @@ export function useChatSession(userId: string | undefined) {
     try {
       await deleteSessionApi(sessionId);
     } catch (err: any) {
-      // Rollback on failure
       setSessions(previousSessions);
-      setErrorMessage(err?.message || 'Failed to delete session.');
+      setActiveSessionId(previousActive);
+      setErrorMessage(err?.message || 'Failed to delete session. Changes have been restored.');
     }
   }, [sessions, activeSessionId]);
 
@@ -204,7 +224,8 @@ export function useChatSession(userId: string | undefined) {
 
   const sendMessage = useCallback(
     async (text: string) => {
-      if (!text.trim() || isSending) return;
+      const trimmed = text.trim();
+      if (!trimmed || isSending) return;
       if (!userId) {
         setErrorMessage('You must be signed in to send a message.');
         return;
@@ -217,10 +238,10 @@ export function useChatSession(userId: string | undefined) {
 
       if (!targetSessionId) {
         try {
-          targetSessionId = await createNewSession(text);
+          targetSessionId = await createNewSession(trimmed);
         } catch {
           setIsSending(false);
-          setErrorMessage('Failed to initialize a new session.');
+          setErrorMessage('Failed to initialize a new conversation. Please try again.');
           return;
         }
       }
@@ -229,20 +250,20 @@ export function useChatSession(userId: string | undefined) {
       const optimisticUserMsg: ChatMessage = {
         id: tempUserMsgId,
         role: 'user',
-        text: text.trim(),
+        text: trimmed,
         createdAt: new Date(),
       };
 
       setMessages((prev) => [...prev, optimisticUserMsg]);
 
       try {
-        const response = await sendChatMessage(targetSessionId, text.trim());
+        const response = await sendChatMessage(targetSessionId, trimmed);
 
         const currentSession = sessions.find((s) => s.id === targetSessionId);
         if (currentSession && (currentSession.messageCount === 0 || currentSession.title === 'New Chat')) {
           const sessionRef = doc(db, 'sessions', targetSessionId);
           await updateDoc(sessionRef, {
-            title: formatSessionTitle(text),
+            title: formatSessionTitle(trimmed),
           }).catch(() => {});
         }
 
@@ -266,8 +287,9 @@ export function useChatSession(userId: string | undefined) {
           return prev;
         });
       } catch (err: any) {
+        setMessages((prev) => prev.filter((m) => m.id !== tempUserMsgId));
         setErrorMessage(
-          err?.message || 'Could not communicate with the companion. Your message is saved. Please try again.'
+          err?.message || 'Could not reach the AI companion. Your text was preserved. Please click retry.'
         );
       } finally {
         setIsSending(false);
@@ -276,7 +298,6 @@ export function useChatSession(userId: string | undefined) {
     [activeSessionId, isSending, userId, createNewSession, sessions]
   );
 
-  // Client-side filtering when searching
   const filteredSessions = searchQuery.trim()
     ? sessions.filter((s) =>
         s.title?.toLowerCase().includes(searchQuery.trim().toLowerCase())
@@ -298,12 +319,12 @@ export function useChatSession(userId: string | undefined) {
     setErrorMessage,
     searchQuery,
     setSearchQuery,
+    loadError,
     createNewSession,
     selectSession,
     renameSession,
     deleteSession,
     sendMessage,
-    // Summary
     currentSummary,
     isSummaryLoading,
     summaryError,

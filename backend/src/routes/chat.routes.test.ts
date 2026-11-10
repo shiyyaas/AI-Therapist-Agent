@@ -27,7 +27,23 @@ describe('Chat Routes Integration', () => {
     app = createApp();
   });
 
-  describe('POST /api/chat - Safe conversation', () => {
+  describe('Health Checks', () => {
+    it('returns status ok on GET /healthz without revealing server details', async () => {
+      const res = await request(app).get('/healthz');
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ status: 'ok' });
+      expect(res.body.version).toBeUndefined();
+      expect(res.body.key).toBeUndefined();
+    });
+
+    it('returns status ok on legacy GET /health', async () => {
+      const res = await request(app).get('/health');
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('ok');
+    });
+  });
+
+  describe('POST /api/chat - Input Validation & Rate Limiting', () => {
     it('rejects unauthenticated requests with 401', async () => {
       const res = await request(app)
         .post('/api/chat')
@@ -44,6 +60,27 @@ describe('Chat Routes Integration', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toContain('sessionId is required');
+    });
+
+    it('rejects whitespace-only messages', async () => {
+      const res = await request(app)
+        .post('/api/chat')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ sessionId: 'session-1', message: '    \n   ' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('cannot be empty');
+    });
+
+    it('rejects messages exceeding 4,000 characters', async () => {
+      const hugeMessage = 'A'.repeat(4001);
+      const res = await request(app)
+        .post('/api/chat')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ sessionId: 'session-1', message: hugeMessage });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('exceeds maximum allowed length');
     });
 
     it('prevents user from accessing a session belonging to someone else', async () => {
@@ -141,10 +178,8 @@ describe('Chat Routes Integration', () => {
       expect(res.body.text).toContain('988');
       expect(res.body.text).toContain('emergency');
 
-      // AI therapist generation MUST NOT be called
       expect(therapistGenMock).not.toHaveBeenCalled();
 
-      // Messages must be saved with safetyFlag
       expect(saveMessageMock).toHaveBeenCalledWith('session-123', 'user', 'I want to kill myself', {
         safetyFlag: true,
         crisisType: 'suicide',
@@ -218,6 +253,16 @@ describe('Chat Routes Integration', () => {
       expect(res.status).toBe(200);
       expect(res.body.title).toBe('Renamed Title');
       expect(renameMock).toHaveBeenCalledWith('session-rename', 'Renamed Title');
+    });
+
+    it('rejects title longer than 100 characters', async () => {
+      const res = await request(app)
+        .patch('/api/chat/sessions/session-rename')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ title: 'B'.repeat(101) });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('cannot exceed 100 characters');
     });
 
     it('rejects renaming an unauthorized session with 403', async () => {
@@ -299,6 +344,15 @@ describe('Chat Routes Integration', () => {
       expect(res.status).toBe(200);
       expect(res.body.sessions).toHaveLength(1);
       expect(mockList).toHaveBeenCalledWith('test-user-1', 'grounding');
+    });
+
+    it('rejects search query longer than 100 characters', async () => {
+      const res = await request(app)
+        .get(`/api/chat/sessions?search=${'c'.repeat(101)}`)
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('search query cannot exceed 100 characters');
     });
   });
 
