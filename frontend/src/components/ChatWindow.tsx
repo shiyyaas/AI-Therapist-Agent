@@ -3,6 +3,7 @@ import { ChatMessage } from '../types/chat';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { RotateCcw } from 'lucide-react';
+import { UrgentSafetyPanel } from './UrgentSafetyPanel';
 
 interface ChatWindowProps {
   messages: ChatMessage[];
@@ -10,6 +11,8 @@ interface ChatWindowProps {
   errorMessage: string | null;
   onSendMessage: (text: string) => void;
   onRetry?: () => void;
+  sessionRiskLevel?: string;
+  onOpenUrgentHelp?: () => void;
 }
 
 export const ChatWindow: React.FC<ChatWindowProps> = ({
@@ -18,6 +21,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   errorMessage,
   onSendMessage,
   onRetry,
+  sessionRiskLevel,
+  onOpenUrgentHelp,
 }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -27,9 +32,24 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
 
   const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
 
+  // Check if session has active crisis or any message was flagged
+  const hasCrisisMessage = messages.some((m) => m.safetyFlag || m.riskLevel === 'crisis');
+  const isCrisisActive = sessionRiskLevel === 'crisis' || hasCrisisMessage;
+  const latestCrisisType = [...messages].reverse().find((m) => m.crisisType)?.crisisType;
+
   return (
-    <div className="flex-1 flex flex-col h-full bg-paper relative">
+    <div className="flex-1 flex flex-col h-full bg-paper relative overflow-hidden">
       <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6">
+        {/* Urgent Safety Panel displayed prominently when crisis detected */}
+        {isCrisisActive && (
+          <div className="max-w-3xl mx-auto w-full">
+            <UrgentSafetyPanel
+              crisisType={latestCrisisType}
+              onOpenUrgentHelp={onOpenUrgentHelp}
+            />
+          </div>
+        )}
+
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-8 max-w-lg mx-auto">
             <div className="w-16 h-16 rounded-card bg-daylight flex items-center justify-center text-2xl mb-4">

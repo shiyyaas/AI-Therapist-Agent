@@ -11,8 +11,14 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Session, ChatMessage } from '../types/chat';
-import { sendChatMessage } from '../lib/api';
+import { Session, ChatMessage, SessionSummary } from '../types/chat';
+import {
+  sendChatMessage,
+  renameSessionApi,
+  deleteSessionApi,
+  generateSessionSummaryApi,
+  getSessionSummaryApi,
+} from '../lib/api';
 
 export function formatSessionTitle(text: string, maxLength: number = 50): string {
   if (!text) return 'New Chat';
@@ -29,10 +35,18 @@ export function useChatSession(userId: string | undefined) {
   const [loadingMessages, setLoadingMessages] = useState<boolean>(false);
   const [isSending, setIsSending] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // End-of-session summary state
+  const [currentSummary, setCurrentSummary] = useState<SessionSummary | null>(null);
+  const [isSummaryLoading, setIsSummaryLoading] = useState<boolean>(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [summaryModalOpen, setSummaryModalOpen] = useState<boolean>(false);
 
   const activeSessionIdRef = useRef<string | null>(null);
   activeSessionIdRef.current = activeSessionId;
 
+  // Listen for user sessions
   useEffect(() => {
     if (!userId) {
       setSessions([]);
@@ -70,9 +84,11 @@ export function useChatSession(userId: string | undefined) {
     return () => unsubscribe();
   }, [userId]);
 
+  // Listen for messages in active session
   useEffect(() => {
     if (!activeSessionId) {
       setMessages([]);
+      setCurrentSummary(null);
       return;
     }
 
@@ -97,6 +113,11 @@ export function useChatSession(userId: string | undefined) {
       }
     );
 
+    // Try loading existing summary if session was ended
+    getSessionSummaryApi(activeSessionId)
+      .then((existing) => setCurrentSummary(existing))
+      .catch(() => setCurrentSummary(null));
+
     return () => unsubscribe();
   }, [activeSessionId]);
 
@@ -107,6 +128,8 @@ export function useChatSession(userId: string | undefined) {
       uid: userId,
       title: formatSessionTitle(initialTitle),
       status: 'active',
+      riskLevel: 'none',
+      endedAt: null,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       messageCount: 0,
@@ -114,6 +137,7 @@ export function useChatSession(userId: string | undefined) {
 
     setActiveSessionId(newDocRef.id);
     setMessages([]);
+    setCurrentSummary(null);
     setErrorMessage(null);
     return newDocRef.id;
   }, [userId]);
@@ -122,6 +146,61 @@ export function useChatSession(userId: string | undefined) {
     setActiveSessionId(sessionId);
     setErrorMessage(null);
   }, []);
+
+  const renameSession = useCallback(async (sessionId: string, newTitle: string) => {
+    const trimmed = formatSessionTitle(newTitle);
+    // Optimistic local update
+    setSessions((prev) =>
+      prev.map((s) => (s.id === sessionId ? { ...s, title: trimmed } : s))
+    );
+    try {
+      await renameSessionApi(sessionId, trimmed);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to rename session.');
+      throw err;
+    }
+  }, []);
+
+  const deleteSession = useCallback(async (sessionId: string) => {
+    const previousSessions = [...sessions];
+    // Optimistic UI update
+    setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+
+    if (activeSessionId === sessionId) {
+      const remaining = previousSessions.filter((s) => s.id !== sessionId);
+      setActiveSessionId(remaining.length > 0 ? remaining[0].id : null);
+    }
+
+    try {
+      await deleteSessionApi(sessionId);
+    } catch (err: any) {
+      // Rollback on failure
+      setSessions(previousSessions);
+      setErrorMessage(err?.message || 'Failed to delete session.');
+    }
+  }, [sessions, activeSessionId]);
+
+  const endSessionAndGenerateSummary = useCallback(async () => {
+    if (!activeSessionId) return;
+
+    setIsSummaryLoading(true);
+    setSummaryError(null);
+    setSummaryModalOpen(true);
+
+    try {
+      const summary = await generateSessionSummaryApi(activeSessionId);
+      setCurrentSummary(summary);
+      setSessions((prev) =>
+        prev.map((s) => (s.id === activeSessionId ? { ...s, status: 'ended' } : s))
+      );
+    } catch (err: any) {
+      setSummaryError(
+        err?.message || 'Could not generate session summary. Your chat is safe. You can retry.'
+      );
+    } finally {
+      setIsSummaryLoading(false);
+    }
+  }, [activeSessionId]);
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -177,6 +256,9 @@ export function useChatSession(userId: string | undefined) {
                 id: `assistant-${Date.now()}`,
                 role: 'assistant',
                 text: response.text,
+                safetyFlag: response.safetyFlag,
+                crisisType: response.crisisType,
+                riskLevel: response.riskLevel,
                 createdAt: new Date(response.createdAt),
               },
             ];
@@ -194,17 +276,39 @@ export function useChatSession(userId: string | undefined) {
     [activeSessionId, isSending, userId, createNewSession, sessions]
   );
 
+  // Client-side filtering when searching
+  const filteredSessions = searchQuery.trim()
+    ? sessions.filter((s) =>
+        s.title?.toLowerCase().includes(searchQuery.trim().toLowerCase())
+      )
+    : sessions;
+
+  const currentSession = sessions.find((s) => s.id === activeSessionId);
+
   return {
-    sessions,
+    sessions: filteredSessions,
+    rawSessions: sessions,
     activeSessionId,
+    currentSession,
     messages,
     loadingSessions,
     loadingMessages,
     isSending,
     errorMessage,
     setErrorMessage,
+    searchQuery,
+    setSearchQuery,
     createNewSession,
     selectSession,
+    renameSession,
+    deleteSession,
     sendMessage,
+    // Summary
+    currentSummary,
+    isSummaryLoading,
+    summaryError,
+    summaryModalOpen,
+    setSummaryModalOpen,
+    endSessionAndGenerateSummary,
   };
 }
