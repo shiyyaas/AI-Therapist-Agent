@@ -120,6 +120,55 @@ npm run build     # Run TypeScript check and Vite build
 
 ---
 
+## Phase 2: Crisis Safety, History, & Summaries
+
+### Testing Crisis Detection Locally
+The crisis detection engine runs two safety layers on every incoming user message:
+1. **Deterministic Regex Pattern Matching** (`backend/src/safety/crisis-detector.ts`)
+2. **Strict Gemini Risk Classification** (`backend/src/safety/gemini-classifier.ts`)
+
+You can run the dedicated safety test suite locally:
+```bash
+cd backend
+npm test src/safety/safety.test.ts
+```
+
+Test examples:
+- **Crisis Language:** `"I want to kill myself"`, `"urge to cut myself"`, `"swallowed a bottle of painkillers"` trigger fixed emergency responses with 988 Lifeline resources.
+- **Benign Language:** `"My feet are killing me"`, `"I died laughing"`, `"I feel stressed"` are not falsely flagged and proceed to normal empathetic conversation.
+
+### Running Firebase Local Emulator Suite
+To run the Firestore emulator locally for testing security rules and offline development:
+```bash
+# 1. Install Firebase CLI globally or run with npx
+npm install -g firebase-tools
+
+# 2. Start the Firestore emulator
+firebase emulators:start --only firestore
+```
+The Firestore emulator will listen on `127.0.0.1:8080` (or the configured port).
+
+### Running Firestore Security Rules Unit Tests
+Once the emulator is running, execute the security rules test suite:
+```bash
+cd backend
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 npm test src/safety/firestore.rules.test.ts
+```
+The suite verifies that:
+- Users can read/write their own profile doc.
+- Users can access only their own sessions, messages, and session summaries.
+- Cross-user data access is rejected with permission denied.
+- Unauthenticated access is rejected.
+
+### Configuring Gemini Safety Settings
+In `backend/.env`, configure your Gemini model:
+```env
+GEMINI_MODEL=gemini-2.5-flash
+```
+Gemini requests enforce strict JSON validation for safety classification and session summarization. If the Gemini classifier returns malformed JSON or encounters an error, the system automatically falls back to deterministic regex safety checks to ensure user safety is never compromised.
+
+---
+
 ## Deployment Notes
 
 - **Backend:** Can be deployed to Google Cloud Run, Heroku, or any Node.js container host. Pass environment variables through your host's secret manager.
@@ -134,4 +183,5 @@ npm run build     # Run TypeScript check and Vite build
 
 ## Documentation
 - [Phase 1 Specification & Architecture](docs/phase-1.md)
+- [Phase 2 Specification & Architecture](docs/phase-2.md)
 - [Design Tokens & UI System](docs/DESIGN.md)
