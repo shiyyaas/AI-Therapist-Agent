@@ -78,6 +78,8 @@ describe('Crisis Detector (Deterministic regex)', () => {
       'I need to kill some time before the meeting',
       'This workout is going to kill me',
       'Can you help me breathe through my stress?',
+      "I'm dying to see that movie.",
+      'This deadline is killing me.',
     ];
 
     for (const text of safeExamples) {
@@ -85,6 +87,16 @@ describe('Crisis Detector (Deterministic regex)', () => {
       expect(res.riskLevel, `Falsely flagged: "${text}"`).toBe('none');
       expect(res.matchedCategories).toEqual([]);
     }
+  });
+
+  it('detects specified true positive crisis prompt phrases', () => {
+    const tp1 = detectCrisisRisk('I have a plan to end my life tonight.');
+    expect(tp1.riskLevel).toBe('crisis');
+    expect(tp1.matchedCategories).toContain('suicide');
+
+    const tp2 = detectCrisisRisk("I'm going to hurt someone when they get home.");
+    expect(tp2.riskLevel).toBe('crisis');
+    expect(tp2.matchedCategories).toContain('violence');
   });
 
   it('includes key emergency resources in FIXED_CRISIS_RESPONSE', () => {

@@ -1,61 +1,68 @@
 # AI Wellness Companion
 
-A secure AI Wellness Companion web application providing compassionate, non-judgmental conversational support. Features anonymous and authenticated accounts, persistent Firestore session history, and empathetic responses powered by Google Gemini.
+A secure, accessible, and privacy-preserving AI Wellness Companion web application providing compassionate, non-judgmental conversational reflection and grounding exercises. Features anonymous guest mode and authenticated accounts, persistent Firestore session history, two-tier deterministic and AI safety filters, and structured end-of-session takeaways.
 
-> **Disclaimer:** This application is not a therapist and does not provide medical or psychiatric advice. In emergencies or crises, contact local emergency services immediately.
+> **CRITICAL DISCLAIMER:** This application is an automated conversational tool, **not a human therapist, medical doctor, or emergency psychiatric service**. It does not diagnose mental health conditions or provide medical treatment. If you or someone you know is in immediate danger, having thoughts of self-harm, or experiencing a crisis, contact local emergency services (**911**) or the Suicide & Crisis Lifeline (**call or text 988** in the U.S. and Canada) immediately.
 
 ---
 
 ## Architecture Overview
 
-- **Frontend:** React 18, Vite, TypeScript, Tailwind CSS, React Router, Firebase Web SDK.
+- **Frontend:** React 18, Vite, TypeScript, Tailwind CSS, React Router, Firebase Web SDK (v10).
 - **Backend:** Node.js, Express, TypeScript, Firebase Admin SDK, Google Gen AI SDK (`@google/genai`).
-- **Database & Auth:** Cloud Firestore, Firebase Authentication.
+- **Database & Auth:** Cloud Firestore, Firebase Authentication (Anonymous & Email/Password).
 - **AI Model:** Google Gemini (`gemini-2.5-flash` default, configurable via `GEMINI_MODEL`).
+- **Target Topology:** Google Cloud Run (Backend container) + Firebase Hosting (Frontend static SPA).
 
 ---
 
-## Prerequisites
+## Security & Safety Features
 
-- **Node.js:** v18.0.0+ (v20+ recommended)
+1. **Two-Tier Crisis Safety Engine:**
+   - **Tier 1 (Deterministic):** Fast regular expressions detect active suicidal intent, self-harm, overdose, abuse, and violence while allowing benign colloquial expressions (*"this deadline is killing me"*, *"I died laughing"*).
+   - **Tier 2 (Gemini Classifier):** Strict JSON risk classification that never downgrades deterministic crisis triggers.
+   - **Emergency Escalation:** Returns fixed, pre-approved server-side emergency resources (988 and 911); bypasses normal conversational AI generation.
+2. **Access Control & Firestore Security:**
+   - Owner-only access enforced on profiles, sessions, and messages.
+   - Immutable fields (`uid`, `createdAt`) cannot be modified.
+   - Server-controlled fields (`riskLevel`, `safetyFlag`, `crisisType`) cannot be altered by client writes.
+   - Session summaries subcollection is client read-only (`allow write: if false`).
+3. **Rate Limiting & Input Validation:**
+   - 30 requests/minute per IP/user on `/api/chat` (HTTP 429).
+   - 5 requests/5 minutes per user on session summarization.
+   - Message length limit: 4,000 characters.
+   - Session title and search query limit: 100 characters.
+   - Whitespace-only messages rejected.
+4. **Privacy by Default:**
+   - Zero raw crisis text or sensitive trauma narrative logging.
+   - Cascading permanent deletion of sessions, messages, and summaries.
+   - Container health check endpoint (`GET /healthz`) returns `{ "status": "ok" }` without leaking version or credentials.
+
+---
+
+## Local Setup Guide
+
+### 1. Prerequisites
+- **Node.js:** v20+ recommended (v18+ supported)
 - **npm:** v9+
 - A Google Cloud / Firebase project with **Firestore** and **Firebase Authentication** enabled.
 - A **Google Gemini API Key** from [Google AI Studio](https://aistudio.google.com/).
 
----
+### 2. Environment Configuration
 
-## Setup Guide
+#### Backend (`backend/.env`)
+Copy `backend/.env.example` to `backend/.env`:
+```env
+PORT=8080
+CLIENT_URL=http://localhost:3000
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-2.5-flash
+FIREBASE_PROJECT_ID=your_firebase_project_id
+FIREBASE_CLIENT_EMAIL=your_service_account@your_project_id.iam.gserviceaccount.com
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+```
 
-### 1. Firebase Setup
-1. Go to the [Firebase Console](https://console.firebase.google.com/).
-2. Create a new project or select an existing one.
-3. Under **Authentication** -> **Sign-in method**:
-   - Enable **Anonymous** provider.
-   - Enable **Email/Password** provider.
-4. Under **Firestore Database**:
-   - Create a Firestore database (production or test mode).
-   - Deploy security rules using `firestore.rules`:
-     ```bash
-     firebase deploy --only firestore:rules
-     ```
-5. Obtain Frontend Configuration:
-   - Go to **Project Settings** -> **General** -> **Your apps** -> Web App (`</>`).
-   - Copy the configuration keys into `frontend/.env`.
-6. Obtain Backend Service Account:
-   - Go to **Project Settings** -> **Service accounts**.
-   - Click **Generate new private key** and download the JSON.
-   - Extract `project_id`, `client_email`, and `private_key` into `backend/.env`.
-
-### 2. Gemini API Key
-1. Visit [Google AI Studio](https://aistudio.google.com/).
-2. Click **Get API key** and generate a new key.
-3. Copy the key into `backend/.env` under `GEMINI_API_KEY`.
-
----
-
-## Environment Variables
-
-### Frontend (`frontend/.env`)
+#### Frontend (`frontend/.env`)
 Copy `frontend/.env.example` to `frontend/.env`:
 ```env
 VITE_FIREBASE_API_KEY=your_firebase_api_key
@@ -65,17 +72,6 @@ VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
 VITE_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
 VITE_FIREBASE_APP_ID=your_app_id
 VITE_API_BASE_URL=http://localhost:8080
-```
-
-### Backend (`backend/.env`)
-Copy `backend/.env.example` to `backend/.env`:
-```env
-PORT=8080
-GEMINI_API_KEY=your_gemini_api_key
-GEMINI_MODEL=gemini-2.5-flash
-FIREBASE_PROJECT_ID=your_project_id
-FIREBASE_CLIENT_EMAIL=your_service_account@appspot.gserviceaccount.com
-FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 ```
 
 ---
@@ -88,7 +84,7 @@ cd backend
 npm install
 npm run dev
 ```
-The backend server runs on `http://localhost:8080`.
+Backend runs on `http://localhost:8080`.
 
 ### Frontend
 ```bash
@@ -96,7 +92,7 @@ cd frontend
 npm install
 npm run dev
 ```
-The frontend Vite server runs on `http://localhost:3000`.
+Frontend runs on `http://localhost:3000`.
 
 ---
 
@@ -105,83 +101,52 @@ The frontend Vite server runs on `http://localhost:3000`.
 ### Backend
 ```bash
 cd backend
-npm test          # Run Vitest test suite
-npm run lint      # Run ESLint
-npm run build     # Compile TypeScript
+npm test          # Run Vitest test suite (45 tests)
+npm run lint      # Run ESLint (0 errors, 0 warnings)
+npm run build     # Verify TypeScript build
 ```
 
 ### Frontend
 ```bash
 cd frontend
-npm test          # Run Vitest test suite
-npm run lint      # Run ESLint
-npm run build     # Run TypeScript check and Vite build
+npm test          # Run Vitest test suite (17 tests)
+npm run lint      # Run ESLint (0 errors, 0 warnings)
+npm run build     # Run TypeScript check and Vite production build
 ```
 
 ---
 
-## Phase 2: Crisis Safety, History, & Summaries
+## Deployment Guide (Cloud Run + Firebase Hosting)
 
-### Testing Crisis Detection Locally
-The crisis detection engine runs two safety layers on every incoming user message:
-1. **Deterministic Regex Pattern Matching** (`backend/src/safety/crisis-detector.ts`)
-2. **Strict Gemini Risk Classification** (`backend/src/safety/gemini-classifier.ts`)
-
-You can run the dedicated safety test suite locally:
+### 1. Backend: Deploy to Google Cloud Run
+Build and deploy the backend container via Docker:
 ```bash
 cd backend
-npm test src/safety/safety.test.ts
+gcloud builds submit --tag gcr.io/PROJECT_ID/ai-wellness-backend
+gcloud run deploy ai-wellness-backend \
+  --image gcr.io/PROJECT_ID/ai-wellness-backend \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars CLIENT_URL="https://PROJECT_ID.web.app",GEMINI_MODEL="gemini-2.5-flash" \
+  --set-secrets GEMINI_API_KEY=gemini-api-key:latest,FIREBASE_PRIVATE_KEY=firebase-private-key:latest
 ```
 
-Test examples:
-- **Crisis Language:** `"I want to kill myself"`, `"urge to cut myself"`, `"swallowed a bottle of painkillers"` trigger fixed emergency responses with 988 Lifeline resources.
-- **Benign Language:** `"My feet are killing me"`, `"I died laughing"`, `"I feel stressed"` are not falsely flagged and proceed to normal empathetic conversation.
-
-### Running Firebase Local Emulator Suite
-To run the Firestore emulator locally for testing security rules and offline development:
+### 2. Frontend: Deploy to Firebase Hosting
 ```bash
-# 1. Install Firebase CLI globally or run with npx
-npm install -g firebase-tools
-
-# 2. Start the Firestore emulator
-firebase emulators:start --only firestore
+cd frontend
+# Set VITE_API_BASE_URL to your Cloud Run URL in frontend/.env.production
+npm run build
+cd ..
+firebase deploy --only hosting,firestore:rules
 ```
-The Firestore emulator will listen on `127.0.0.1:8080` (or the configured port).
-
-### Running Firestore Security Rules Unit Tests
-Once the emulator is running, execute the security rules test suite:
-```bash
-cd backend
-FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 npm test src/safety/firestore.rules.test.ts
-```
-The suite verifies that:
-- Users can read/write their own profile doc.
-- Users can access only their own sessions, messages, and session summaries.
-- Cross-user data access is rejected with permission denied.
-- Unauthenticated access is rejected.
-
-### Configuring Gemini Safety Settings
-In `backend/.env`, configure your Gemini model:
-```env
-GEMINI_MODEL=gemini-2.5-flash
-```
-Gemini requests enforce strict JSON validation for safety classification and session summarization. If the Gemini classifier returns malformed JSON or encounters an error, the system automatically falls back to deterministic regex safety checks to ensure user safety is never compromised.
-
----
-
-## Deployment Notes
-
-- **Backend:** Can be deployed to Google Cloud Run, Heroku, or any Node.js container host. Pass environment variables through your host's secret manager.
-- **Frontend:** Can be deployed to Firebase Hosting, Vercel, or Netlify:
-  ```bash
-  cd frontend
-  npm run build
-  firebase deploy --only hosting
-  ```
 
 ---
 
 ## Documentation
-- [Phase 1 Specification & Architecture](docs/phase-1.md)
-- [Phase 2 Specification & Architecture](docs/phase-2.md)
-- [Design Tokens & UI System](docs/DESIGN.md)
+- [Phase 1 Specification](docs/phase-1.md)
+- [Phase 2 Specification](docs/phase-2.md)
+- [Phase 3 Specification](docs/phase-3.md)
+- [System Architecture & Flow](docs/architecture.md)
+- [Privacy & Safety Policy](docs/privacy-and-safety.md)
+- [Design Tokens & UI Reference](docs/DESIGN.md)
