@@ -31,11 +31,11 @@ Thumbs.db
 .idea/
 
 # Local
-        .agents/
-        .claude/
-        .codex/
-        .cursor/
-        .kimi-code/
-        .kimi/
-        .mcp.json
-        .qarinah/
+.agents/
+.claude/
+.codex/
+.cursor/
+.kimi-code/
+.kimi/
+.mcp.json
+.qarinah/
