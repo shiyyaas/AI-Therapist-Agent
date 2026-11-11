@@ -29,3 +29,13 @@ lerna-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# Local
+        .agents/
+        .claude/
+        .codex/
+        .cursor/
+        .kimi-code/
+        .kimi/
+        .mcp.json
+        .qarinah/
